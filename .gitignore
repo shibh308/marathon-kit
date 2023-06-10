@@ -1,0 +1,8 @@
+.idea
+.venv
+/cpp/cmake-build-release
+/cpp/cmake-build-debug
+/tools
+/out/*
+/vis*
+!/out/.gitkeep
