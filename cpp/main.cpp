@@ -4,8 +4,8 @@
 // #define FROMFILE
 
 #pragma GCC target("avx2")
-#pragma GCC optimize("O2")
-#pragma GCC optimize("unroll-loops")
+#pragma GCC optimize("Ofast")
+// #pragma GCC optimize("unroll-loops")
 
 using namespace std;
 
@@ -23,16 +23,9 @@ bool chmin(T& x, T y){
     return false;
 }
 
-template <typename T>
-bool chmax(T& x, T y){
-    if(x < y){
-        x = y;
-        return true;
-    }
-    return false;
-}
 
 
+// doc: https://shibh308.github.io/library/library/lib/functions/xorshift.cpp.html
 namespace Rnd{
 // doc: https://shibh308.github.io/library/library/lib/functions/xorshift.cpp.html
 uint64_t x = 0xdeadbeef0110dead;
@@ -66,437 +59,16 @@ void shuffle(vector<T>& v){
 }
 }
 
+using namespace Rnd;
 
 
-int n, k;
-array<int, 11> a;
-vector<int> x, y;
-
-
-// doc: https://shibh308.github.io/library/library/lib/classes/bitvector.cpp.html
-struct BitVector{
-    vector<uint64_t> v;
-    vector<int> r;
-    BitVector(){}
-    void build(){
-        r.assign(v.size() + 1, 0);
-        for(int i = 0; i < v.size(); ++i)
-            r[i + 1] = r[i] + __builtin_popcountll(v[i]);
+template <typename T>
+bool chmax(T& x, T y){
+    if(x < y){
+        x = y;
+        return true;
     }
-    bool access(int x){
-        return (v[x >> 6] >> (x & 63)) & 1;
-    }
-    // [0, x)の1の出現回数
-    int rank(int x){
-        return r[x >> 6] + __builtin_popcountll(v[x >> 6] & ((1uLL << (x & 63)) - 1));
-    }
-    int rank(int x, bool fl){
-        return fl ? rank(x) : x - rank(x);
-    }
-};
-
-
-
-// doc: https://shibh308.github.io/library/library/lib/classes/waveletmatrix.cpp.html
-template <typename T, int W>
-struct WaveletMatrix{
-
-    array<BitVector, W> bv;
-    array<int, W> zero_cnt;
-
-    WaveletMatrix(vector<T>& a){
-        int n = a.size();
-        vector<T> v(a);
-        for(int i = W - 1; i >= 0; --i){
-            vector<uint64_t> b((n >> 6) + 1, 0);
-            vector<T> v1, v2;
-            for(int j = 0; j < n; ++j){
-                ((v[j] >> i) & 1 ? v2 : v1).push_back(v[j]);
-                b[j >> 6] |= uint64_t((v[j] >> i) & 1) << (j & 63);
-            }
-            for(int j = 0; j < v.size(); ++j)
-                v[j] = (j < v1.size() ? v1[j] : v2[j - v1.size()]);
-            bv[i].v = move(b);
-            bv[i].build();
-            zero_cnt[i] = bv[i].rank(n, 0);
-        }
-    }
-
-    // [l, r)内のxの数
-    int count(int l, int r, T x){
-        for(int i = W - 1; i >= 0; --i){
-            bool fl = (x >> i) & 1;
-            int st = bv[i].rank(l, fl);
-            int en = bv[i].rank(r, fl);
-            l = (fl ? zero_cnt[i] : 0) + st;
-            r = (fl ? zero_cnt[i] : 0) + en;
-        }
-        return r - l;
-    }
-
-    // [l, r)内で[0, x)を満たす値の数
-    int count_lower(int l, int r, T x){
-        int cnt = 0;
-        for(int i = W - 1; i >= 0; --i){
-            bool fl = (x >> i) & 1;
-            int st = bv[i].rank(l, fl);
-            int en = bv[i].rank(r, fl);
-            if(fl){
-                st += zero_cnt[i];
-                en += zero_cnt[i];
-                cnt += (bv[i].rank(r, 0) - bv[i].rank(l, 0));
-            }
-            l = st, r = en;
-        }
-        return cnt;
-    }
-
-    // [l, r)内で[x, y)を満たす値の数
-    int count_range(int l, int r, T x, T y){
-        return count_lower(l, r, y) - count_lower(l, r, x);
-    }
-
-    // 0-indexedでk番目に小さいものを返す
-    T kth_min(int l, int r, int k){
-        T ans = 0;
-        for(int i = W - 1; i >= 0; --i){
-            int st = bv[i].rank(l, 0);
-            int en = bv[i].rank(r, 0);
-            if(en - st <= k){
-                k -= en - st;
-                l = zero_cnt[i] + bv[i].rank(l, 1);
-                r = zero_cnt[i] + bv[i].rank(r, 1);
-                ans |= (1uLL << i);
-            }
-            else{
-                l = st, r = en;
-            }
-        }
-        return ans;
-    }
-
-    // [l, r)でのx以上最小値
-    pair<T, bool> predecessor(int l, int r, T x){
-        int idx = count_lower(l, r, x);
-        if(idx == r - l){
-            return make_pair((1uLL << W) - 1, false);
-        }
-        return make_pair(kth_min(l, r, idx), true);
-    }
-
-    // [l, r)でのx以下最大値
-    pair<T, bool> successor(int l, int r, T x){
-        int idx = count_lower(l, r, x + 1);
-        if(idx == 0)
-            return make_pair(0, false);
-        return make_pair(kth_min(l, r, idx - 1), true);
-    }
-};
-
-
-clock_t st;
-
-
-void solve(){
-    vector<pair<int,int>> v;
-    for(int i = 0; i < n; ++i){
-        v.emplace_back(x[i], y[i]);
-    }
-    sort(v.begin(), v.end());
-    for(int i = 0; i < n; ++i){
-        x[i] = v[i].first;
-        y[i] = v[i].second;
-    }
-
-    constexpr int v_cut = 27;
-    vector<int> v_poses(1, -100000);
-    for(int i = 0; i < v_cut - 1; ++i){
-        int bo = n * (i + 1) / v_cut;
-        int pos = v[bo].first + 1;
-        v_poses.emplace_back(pos);
-    }
-    v_poses.emplace_back(100000);
-    vector<pair<pair<int,int>, pair<int,int>>> ans;
-
-    vector<int> x_poses(1, -10000);
-    vector<int> y_poses(1, -10000);
-
-    for(int i = 0; i < v_poses.size() - 2; ++i){
-        x_poses.emplace_back(v_poses[i + 1]);
-    }
-
-    vector<int> v_poses2(1, -100000);
-    for(int i = 0; i < v_cut - 1; ++i){
-        int bo = n * (i + 1) / v_cut;
-        int pos = v[bo].first + 1;
-        v_poses2.emplace_back(pos);
-    }
-    v_poses2.emplace_back(100000);
-    for(int i = 0; i < v_poses2.size() - 2; ++i){
-        y_poses.emplace_back(v_poses2[i + 1]);
-    }
-    /*
-    vector<map<int,int>> vq(v_cut);
-    for(int i = 0; i < v_cut; ++i){
-        for(auto p : gr[i]){
-            ++vq[i][p.second];
-        }
-    }
-    array<int, 11> cnt{0,0,0,0,0,0,0,0,0,0,0};
-    vector<int> bl_cnt(v_cut, 0);
-    for(int i = -10000; i < 10000; ++i){
-        auto bef = bl_cnt;
-        for(int j = 0; j < v_cut; ++j){
-            bl_cnt[j] += vq[j][i];
-        }
-        if(*max_element(bl_cnt.begin(), bl_cnt.end()) > 10){
-            bl_cnt = bef;
-            for(auto c : bl_cnt){
-                ++cnt[c];
-            }
-            y_poses.emplace_back(i);
-            bl_cnt.assign(v_cut, 0);
-        }
-    }
-     */
-    x_poses.emplace_back(10000);
-    y_poses.emplace_back(10000);
-
-    vector<int> x_st(20007, -1);
-    vector<int> x_en(20007, -1);
-    vector<int> _y;
-    for(int i = n - 1; i >= 0; --i){
-        x_st[x[i] + 10000] = i;
-    }
-    for(int i = 0; i < n; ++i){
-        x_en[x[i] + 10000] = i;
-        _y.emplace_back(y[i] + 10000);
-    }
-    for(int i = 0; i < 20006; ++i){
-        chmax(x_st[i + 1], x_st[i]);
-        chmax(x_en[i + 1], x_en[i]);
-    }
-    WaveletMatrix<int, 16> wm(_y);
-
-    auto search = [&](int sx, int ex, int sy, int ey){
-        int sxp = x_en[sx + 10000] + 1;
-        int exp = x_en[ex + 10000 - 1] + 1;
-        int syp = sy + 10000 + 1;
-        int eyp = ey + 10000;
-        chmax(sxp, 0);
-        chmin(exp, n);
-        chmax(syp, 0);
-        chmin(eyp, 20010);
-        return wm.count_range(sxp, exp, syp, eyp);
-    };
-
-    vector<int> cnt(11, 0);
-    for(int i = 0; i < x_poses.size() - 1; ++i){
-        for(int j = 0; j < y_poses.size() - 1; ++j){
-            int sx = x_poses[i];
-            int ex = x_poses[i + 1];
-            int sy = y_poses[j];
-            int ey = y_poses[j + 1];
-            /*
-            int ccc = 0;
-            for(int k = 0; k < n; ++k){
-                if(sx < x[k] && x[k] < ex && sy < y[k] && y[k] < ey){
-                    ++ccc;
-                }
-            }
-             */
-            int cn = search(sx, ex, sy, ey);
-            /*
-            if(ccc != cn){
-                cout << "YABAI" << endl;
-                cout << ccc << " " << cn << endl;
-                exit(0);
-            }
-             */
-            if(cn <= 10){
-                ++cnt[cn];
-            }
-        }
-    }
-    int res = 0;
-    for(int i = 0; i < 11; ++i){
-        res += min(cnt[i], a[i]);
-    }
-
-
-    double st_temp = 0.5;
-    double en_temp = 0.001;
-    double temp = st_temp;
-
-    double res_ev = 0.0;
-    vector<double> coef(11, 0);
-    for(int i = 0; i < 11; ++i){
-        coef[i] = 1.0 + 0.05 * i;
-        res_ev += coef[i] * min(a[i], cnt[i]);
-    }
-    int cnc = 0;
-    int ma_res = res;
-    vector<int> ma_x = x_poses;
-    vector<int> ma_y = y_poses;
-    while(true){
-        // cout << ma_res << ": " << res << endl;
-        if((++cnc %= 100) == 0){
-            double per = double(clock() - st) / (2.85 * CLOCKS_PER_SEC);
-            if(per >= 1.0){
-                break;
-            }
-            temp = st_temp + (en_temp - st_temp) * per;
-        }
-        // cout << temp << endl;
-        if(chmax(ma_res, res)){
-            ma_x = x_poses;
-            ma_y = y_poses;
-        }
-        double rn = Rnd::rnd_double();
-        if(rn < 0.5){
-            int sel = Rnd::rnd() % (x_poses.size() - 2) + 1;
-            int l = x_poses[sel - 1] + 1;
-            int r = x_poses[sel + 1] - 1;
-            if(r - l <= 1){
-                continue;
-            }
-            int p = Rnd::rnd() % (r - l) + l;
-            auto diff = cnt;
-            for(int i = 0; i < y_poses.size() - 1; ++i){
-                int cn;
-                cn = search(x_poses[sel - 1], x_poses[sel], y_poses[i], y_poses[i + 1]);
-                if(cn <= 10){
-                    --diff[cn];
-                }
-                cn = search(x_poses[sel], x_poses[sel + 1], y_poses[i], y_poses[i + 1]);
-                if(cn <= 10){
-                    --diff[cn];
-                }
-                cn = search(x_poses[sel - 1], p, y_poses[i], y_poses[i + 1]);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-                cn = search(p, x_poses[sel + 1], y_poses[i], y_poses[i + 1]);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-            }
-            int aft = 0;
-            double aft_ev = 0.0;
-            for(int j = 0; j < 11; ++j){
-                aft += min(a[j], diff[j]);
-                aft_ev += min(a[j], diff[j]) * coef[j];
-            }
-            if(exp((aft_ev - res_ev) / temp) > Rnd::rnd_double()){
-                // if(aft >= res){
-                res_ev = aft_ev;
-                res = aft;
-                cnt = diff;
-                x_poses[sel] = p;
-            }
-        }
-        else if (rn < 1.0){
-            int sel = (Rnd::rnd() % y_poses.size() - 2) + 1;
-            int l = y_poses[sel - 1] + 1;
-            int r = y_poses[sel + 1] - 1;
-            if(r - l <= 1){
-                continue;
-            }
-            int p = Rnd::rnd() % (r - l) + l;
-            auto diff = cnt;
-            for(int i = 0; i < x_poses.size() - 1; ++i){
-                int cn;
-                cn = search(x_poses[i], x_poses[i + 1], y_poses[sel - 1], y_poses[sel]);
-                if(cn <= 10){
-                    --diff[cn];
-                }
-                cn = search(x_poses[i], x_poses[i + 1], y_poses[sel], y_poses[sel + 1]);
-                if(cn <= 10){
-                    --diff[cn];
-                }
-                cn = search(x_poses[i], x_poses[i + 1], y_poses[sel - 1], p);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-                cn = search(x_poses[i], x_poses[i + 1], p, y_poses[sel + 1]);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-            }
-            int aft = 0;
-            double aft_ev = 0.0;
-            for(int j = 0; j < 11; ++j){
-                aft += min(a[j], diff[j]);
-                aft_ev += min(a[j], diff[j]) * coef[j];
-            }
-            if(exp((aft_ev - res_ev) / temp) > Rnd::rnd_double()){
-                // if(aft >= res){
-                res_ev = aft_ev;
-                res = aft;
-                cnt = diff;
-                y_poses[sel] = p;
-            }
-        }
-        // TODO:
-        /*
-        else{
-            int sel = (rnd() % y_poses.size() - 3);
-            int l = y_poses[sel] + 1;
-            int r = y_poses[sel + 2] - 1;
-            if(r - l <= 1){
-                continue;
-            }
-            int p = rnd() % (r - l) + l;
-            auto diff = cnt;
-            for(int i = 0; i < x_poses.size() - 1; ++i){
-                int cn;
-                for(int j = 0; j < 3; ++j){
-                    cn = search(x_poses[i], x_poses[i + 1], y_poses[sel + j], y_poses[sel + j + 1]);
-                    if(cn <= 10){
-                        --diff[cn];
-                    }
-                }
-                cn = search(x_poses[i], x_poses[i + 1], y_poses[sel], p);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-                cn = search(x_poses[i], x_poses[i + 1], p, y_poses[sel + 3]);
-                if(cn <= 10){
-                    ++diff[cn];
-                }
-            }
-            int aft = 0;
-            for(int j = 0; j < 11; ++j){
-                aft += min(a[j], diff[j]);
-            }
-            if(aft >= res){
-                cout << "ADAPT" << endl;
-                exit(0);
-                res = aft;
-                cnt = diff;
-                y_poses.erase(next(y_poses.begin(), sel));
-            }
-        }
-         */
-    }
-
-    x_poses = ma_x;
-    y_poses = ma_y;
-
-    for(int i = 0; i < x_poses.size() - 2; ++i){
-        ans.emplace_back(make_pair(x_poses[i + 1], -10000), make_pair(x_poses[i + 1], 10000));
-    }
-    for(int i = 0; i < y_poses.size() - 2; ++i){
-        ans.emplace_back(make_pair(-10000, y_poses[i + 1]), make_pair(10000, y_poses[i + 1]));
-    }
-
-    cout << ans.size() << endl;
-    for(auto [p1, p2] : ans){
-        cout << p1.first << " " << p1.second << " " << p2.first << " " << p2.second << endl;
-    }
-#ifdef HAND
-    cout << 1.0 * res / accumulate(a.begin(), a.end(), 0.0) << endl;
-#endif
+    return false;
 }
 
 
@@ -510,25 +82,184 @@ void load_params(){
 }
 
 void read_file(istream& ifs){
-    ifs >> n >> k;
-    x.resize(n);
-    y.resize(n);
-    for(int i = 0; i < 10; ++i){
-        ifs >> a[i + 1];
-    }
-    for(int i = 0; i < n; ++i){
-        ifs >> x[i] >> y[i];
-    }
+    // TODO: read from file
 }
 
-signed main(){
 
-    st = clock();
+
+constexpr int d = 365;
+constexpr int n = 26;
+void solve(){
+    int d_;
+    cin >> d_;
+    vector<int> pena(n);
+    for(int i = 0; i < n; ++i){
+        cin >> pena[i];
+    }
+    vector<vector<int>> satis(n);
+    vector<double> ave(n), dist(n);
+
+    vector<int> plan(d);
+    for(int i = 0; i < d; ++i){
+        plan[i] = i % n;
+    }
+
+    auto replan = [&](int day, vector<double>& ave){
+
+        double score = 0;
+        vector<vector<int>> plan_inv(n);
+        for(int i = 0; i < d; ++i){
+            plan_inv[plan[i]].emplace_back(i);
+        }
+
+        auto pen = [&](int typ, int between){
+            assert(between >= 1);
+            return (1LL * between * (between - 1) / 2) * pena[typ];
+        };
+
+        auto change = [&](int x, int aft){
+            int bef = plan[x];
+            plan[x] = aft;
+
+            auto iter_bef = lower_bound(plan_inv[bef].begin(), plan_inv[bef].end(), x);
+            int bef_l = iter_bef == plan_inv[bef].begin() ? -1 : *prev(iter_bef);
+            int bef_r = next(iter_bef) == plan_inv[bef].end() ? d : *next(iter_bef);
+
+            auto iter_aft = lower_bound(plan_inv[aft].begin(), plan_inv[aft].end(), x);
+            int aft_l = iter_aft == plan_inv[aft].begin() ? -1 : *prev(iter_aft);
+            int aft_r = iter_aft == plan_inv[aft].end() ? d : *iter_aft;
+
+            score -= ave[bef];
+            score += pen(bef, x - bef_l);
+            score += pen(bef, bef_r - x);
+            score -= pen(bef, bef_r - bef_l);
+
+            score += ave[aft];
+            score -= pen(aft, x - aft_l);
+            score -= pen(aft, aft_r - x);
+            score += pen(aft, aft_r - aft_l);
+
+            plan_inv[bef].erase(iter_bef);
+            plan_inv[aft].insert(iter_aft, x);
+        };
+
+        auto check = [&](int iter, double bef_score, double aft_score){
+            return bef_score <= score;
+        };
+
+        int remain = d - day;
+        for(int iter = 0; iter < 100000; ++iter){
+            if(rnd(2)){
+                int x = rnd(remain) + day;
+                int to;
+                do{
+                    to = rnd(n);
+                }while(plan[x] == to);
+                int bef_plan = plan[x];
+
+                double bef_score = score;
+                change(x, to);
+                if(check(iter, bef_score, score)){
+                }
+                else{
+                    // cout << bef_score << " -> " << score << " -> ";
+                    change(x, bef_plan);
+                    // cout << score << endl;
+                    assert(abs(bef_score - score) <= 1e-7);
+                }
+            }
+            else{
+                int l, r;
+                int cn = 0;
+                if(remain >= 15){
+                    l = rnd(remain - 10) + day;
+                    do{
+                        r = l + 1 + rnd(9);
+                    }while(plan[l] == plan[r] && ++cn < 10);
+                }
+                else{
+                    l = rnd(remain) + day;
+                    do{
+                        r = rnd(remain) + day;
+                    }while(plan[l] == plan[r] && ++cn < 10);
+                }
+                if(cn >= 10){
+                    continue;
+                }
+
+                int bef_l = plan[l];
+                int bef_r = plan[r];
+
+                double bef_score = score;
+                change(l, bef_r);
+                change(r, bef_l);
+                if(check(iter, bef_score, score)){
+                }
+                else{
+                    change(l, bef_l);
+                    change(r, bef_r);
+                    assert(abs(bef_score - score) <= 1e-7);
+                }
+            }
+        }
+        // cout << day << " " << score << endl;
+    };
+
+    vector<int> rem(n, 0);
+    i64 score = 0;
+    for(int day = 1; day <= d; ++day){
+        for(int i = 0; i < n; ++i){
+            int x;
+            cin >> x;
+            satis[i].emplace_back(x);
+
+            ave[i] = 0.0;
+            for(int j = 0; j < day; ++j){
+                ave[i] += satis[i][j];
+            }
+            ave[i] /= (day + 1);
+            double dist_sq = 0.0;
+            for(int j = 0; j < day; ++j){
+                dist_sq += pow(satis[i][j] - ave[i], 2.0);
+            }
+            dist[i] = sqrt(dist_sq);
+        }
+
+        replan(day - 1, ave);
+
+        int sel = plan[day - 1];
+        // int sel = day % n;
+
+        score += satis[sel][day - 1];
+        for(int i = 0; i < n; ++i){
+            if(i != sel){
+                ++rem[i];
+                score -= pena[i] * rem[i];
+            }
+            else{
+                rem[i] = 0;
+            }
+        }
+        cout << sel + 1 << endl;
+        // cerr << score << endl;
+    }
+    cerr << score << endl;
+}
+
+
+signed main(){
+    clock_t st = clock();
 
 #ifdef OPTIMIZE
     params::load_params();
 #endif
 
+#ifdef NOSUBMIT
+#endif
+
+    solve();
+
+    /*
 #ifndef FROMFILE
     // TODO: input
     read_file(cin);
@@ -537,7 +268,6 @@ signed main(){
     assert(ifs.is_open());
     read_file(ifs);
 #endif
-    a[0] = 0;
-    solve();
+     */
 
 }
